@@ -109,7 +109,13 @@ def evaluate_clarity(df):
 
     print("Subtask 1: Evasion-based Clarity Classification.")
     
-    predicted_clarity = [CLARITY_MAPPING[pred] for pred in df['predicted_label']]
+    first_pred = df['predicted_label'].iloc[0]
+    if first_pred in CLARITY_LABELS:
+        predicted_clarity = df['predicted_label'].tolist()
+        print("(Direct clarity predictions detected, no mapping applied)")
+    else:
+        predicted_clarity = [CLARITY_MAPPING[pred] for pred in df['predicted_label']]
+        print("(Mapped from evasion labels to clarity labels)")
     
     if 'clarity_label' not in df.columns:
         raise ValueError("Cannot find clarity_label column")
