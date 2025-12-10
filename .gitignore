@@ -5,6 +5,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+pkl/
+predictions/
+augmentated_datasets/
 .venv/
 venv/
 env/
@@ -30,3 +33,4 @@ data/
 *.json
 *.jsonl
 *.parquet
+notes.txt

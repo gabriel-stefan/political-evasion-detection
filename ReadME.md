@@ -25,5 +25,23 @@ Three classification tasks are evaluated:
 
 **Features include question length, answer length, a gpt3.5 summary of the question and answer pair and a gpt3.5 predcition, these are only available in the train dataset.
 
+# Augmentation + NLI Results
+
+| Model | Dataset | Macro F1 |
+|-------|---------|----------|
+| ModernBERT-Large | Original | 0.6479 |
+| ModernBERT-Large | GPT-5.1 Augmented | 0.6789 |
+| ModernBERT-Large | Backtranslation Augmented | 0.4926 |
+| ModernBERT-Large + Focal Loss (γ=2.0) | GPT-5.1 Augmented | 0.6629 |
+| ModernBERT-Large + Focal Loss (γ=3.0) | GPT-5.1 Augmented | 0.5960 |
+| ModernBERT-Large + Focal Loss (γ=1.0) | GPT-5.1 Augmented | 0.6245 |
+| ModernBERT-Large + Weighted CE | GPT-5.1 Augmented | 0.6755 |
+| DeBERTa-v3-Large | Original | 0.5807 |
+| DeBERTa-v3-Large | Backtranslation Augmented | 0.5823 |
+| DeBERTa-v3-Large | GPT-5.1 Augmented | 0.5669 |
+| Political_DEBATE (NLI) | Original | 0.5969 |
+| Political_DEBATE (NLI) | GPT-5.1 Augmented | 0.5915 |
+| ModernBERT-Large-NLI | Original | 0.6442 |
+
 
 
