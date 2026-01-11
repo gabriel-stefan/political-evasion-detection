@@ -5,9 +5,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-pkl/
-predictions/
-augmentated_datasets/
 .venv/
 venv/
 env/
@@ -28,9 +25,5 @@ model_checkpoints/
 *.pt
 *.bin
 *.safetensors
-data/
-*.csv
-*.json
-*.jsonl
 *.parquet
 notes.txt
