@@ -1,117 +1,170 @@
-# Clarity: Political Evasion Detection
+# Multi-Head RoBERTa with Chunking for Long-Context Evasion Detection
 
-This repository contains my submission for **SemEval 2026 Task 6: Clarity**.
-- [Task Website](https://clarity-semeval2026.github.io/)
-- [Reference Paper](reference_paper.pdf)
+This repository contains our system for **SemEval-2026 Task 6 (CLARITY: Unmasking Political Question Evasions)**.
 
+- [Shared Task Page](https://konstantinosftw.github.io/CLARITY-SemEval-2026/)
+- [HuggingFace Dataset](https://huggingface.co/datasets/ailsntua/QEvasion)
 
-## Model Architecture
-The best-performing model achieves a **Macro F1 Score of 0.70**.
+## Task Overview
 
-### Hierarchical Multi-Head RoBERTa
-I designed a custom architecture to address two key challenges in political interviews: **input length** and **task correlation**.
+The CLARITY task requires classifying English political interview question--answer pairs along two dimensions:
 
-#### 1. Hierarchical Processing (Chunking & Pooling)
-Political answers often exceed the standard 512-token limit of BERT-based models. Instead of truncating valuable context, I implemented a Hierarchical Max-Pooling strategy:
-- **Chunking**: The input (Question + Answer) is split into overlapping chunks of 512 tokens (stride: 256).
-- **Shared Encoder**: Each chunk is processed independently by a shared `roberta-large` backbone.
-- **Max Pooling**: I aggregate the [CLS] embeddings from all chunks using a Max-Pooling operation.
+- **Subtask 1 (Clarity):** 3-way classification into *Clear Reply*, *Ambivalent*, or *Clear Non-Reply*.
+- **Subtask 2 (Evasion):** 9-way classification into fine-grained evasion strategies (*Explicit*, *Dodging*, *Implicit*, *General*, *Deflection*, *Partial/half-answer*, *Clarification*, *Claims ignorance*, *Declining to answer*).
 
-Max pooling captures the strongest activation of evasion features across the entire text, unlike average pooling which might dilute the signal.
+The dataset comprises 3,756 QA pairs from 287 White House interview transcripts (2006--2023), with 3,448 training and 308 development instances. Label distributions are substantially skewed, and inter-annotator agreement is moderate (Fleiss κ = 0.64 for Subtask 1, κ = 0.48 for Subtask 2). Performance is evaluated using Macro-F1.
 
-#### 2. Multi-Head Joint Learning
-Evasion detection (9 classes) and Clarity detection (3 classes) are correlated tasks.
-- I added two classification heads on top of the pooled representation.
-- The model is trained to minimize a joint loss: $L_{total} = L_{clarity} + L_{evasion}$.
-- **Result**: While performance on the primary Clarity task (Task 1) remained consistent, the multi-head approach drove a significant improvement on the Evasion task (Task 2), boosting the F1 score from **0.45 to 0.49** (an ~8.9% increase).
+## System Overview
 
-#### 3. K-Fold Evaluation
-To ensure our results are not artifacts of a lucky split, I employ 7-Fold Stratified Cross-Validation.
-- The final prediction is an ensemble (average probability) of the 7 fold models.
+### Hierarchical Input Processing
 
+Political responses frequently exceed the 512-token limit of standard Transformer encoders. Since evasion cues may appear anywhere in the response, naïve truncation risks discarding critical evidence. We address this with an overlapping sliding-window chunking strategy:
 
-## Experimental Journey
-I conducted extensive experiments to reach this solution. Below is a summary of the research path.
+1. Each question--answer pair is formatted as `Question: {Q}\nAnswer: {A}` and tokenized without truncation.
+2. The token sequence is segmented into overlapping windows of length $L = 512$ with stride $S = 256$.
+3. Each chunk is encoded independently by a shared RoBERTa-large encoder; we extract the hidden state at position 0 of each chunk.
+4. Chunk representations are aggregated via element-wise Max-Pooling into a single response-level vector $v \in \mathbb{R}^{1024}$.
 
-### Model Exploration
-- **ModernBERT**: I tested `ModernBERT-base` and `ModernBERT-large` for their efficiency with long contexts (8k tokens). They are behind RoBERTa in detecting subtle evasion.
-- **DeBERTa V3**: I experimented with `deberta-v3-large` and attention-based pooling layers.
-- **Llama 3.1**: I fine-tuned `Llama-3.1-8B` using LoRA/PEFT. While it showed high reasoning capability, the compute cost too high for my deployment constraints compared to the encoder-only models.
+Max-Pooling preserves the strongest feature activations across all chunks, capturing localized evasion cues regardless of their position in the response.
 
-### Advanced Techniques
-#### Data Augmentation
-To combat the limited size of the QEvasion dataset, I implemented:
-- **Backtranslation**: Round-trip translation (English → Chinese/German → English) to generate paraphrased training examples.
-- **Synthetic Generation**: Using GPT-5.1 to generate semantically diverse evasion examples, targeting the Clear Reply and Clear Non-Reply classes.
+<img src="images/token_distribution.png" alt="Token distribution of the CLARITY dataset. The red dashed line marks the 512-token limit." width="650"/>
 
-#### Loss Functions & Training
-- **Focal Loss**: I implemented Focal Loss to penalize hard-to-classify examples and address the class imbalance in the 9-way evasion task.
-- **NLI Formulation**: I experimented with casting the problem as a Natural Language Inference (NLI) task (e.g., *Premise: Question, Hypothesis: The speaker answers directly*), but standard classification heads proved more effective.
+*Distribution of token counts for the concatenated question--answer input in the CLARITY dataset. The vertical red line marks the 512-token limit of standard RoBERTa models.*
 
-#### Ensemble Methods
-- **Stacking**: I built a stacking ensemble combining predictions from RoBERTa, DeBERTa, and ModernBERT.
-- **Feature Engineering**: I extracted linguistic features (sentiment, perplexity, lexical density) to feed into a meta-classifier.
+### Multi-Task Classification Heads
 
-## Experiments Results
+The pooled vector $v$ is shared by both subtasks. After dropout ($p = 0.1$), two task-specific linear heads produce predictions:
 
+- A 3-way Clarity classifier
+- A 9-way Evasion classifier
 
-Three classification tasks are evaluated:
-1. **Direct Clarity Classification** (3 classes: Clear Reply, Ambivalent, Clear Non-Reply)
-2. **Evasion-based Clarity Classification** (9→3 hierarchical mapping)
-3. **Evasion Classification** (9 classes with multi-annotator evaluation)
+Both heads are trained jointly using a combined cross-entropy loss:
 
-| Model | Direct Clarity F1 | Evasion→Clarity F1 | Evasion F1 (9-class) |
-| :--- | :---: | :---: | :---: |
-| **Traditional ML (TF-IDF only)** | | | |
-| Logistic Regression | 0.4997 | 0.5078 | 0.3010 |
-| XGBoost | 0.4943 | 0.4691 | 0.2676 |
-| **Traditional ML + Features** | | | |
-| Logistic Regression + Features | 0.5916 | 0.5717 | 0.3321 |
-| XGBoost + Features | 0.6360 | 0.6236 | 0.3852 |
-| **Transformer Models (Fine-tuned)** | | | |
-| ModernBERT-base | 0.5693 | 0.5035 | 0.3041 |
-| ModernBERT-large | 0.6494 | 0.6064 | 0.3636 |
-| Llama 3.1-8B (QLoRA) | 0.6277 | — | — |
-| **Large Language Models (Prompting)** | | | |
-| GPT-5 (Few-Shot CoT) | 0.7171 | 0.7109 | 0.4564 |
+$$\mathcal{L} = \mathcal{L}_{\text{clarity}} + \mathcal{L}_{\text{evasion}}$$
 
-*> **Note**: Features include question length, answer length, a gpt3.5 summary of the question and answer pair and a gpt3.5 prediction (only available in the train dataset).*
+No class-weighted loss, focal loss, or label smoothing is used. The coarser clarity signal acts as an effective regularizer for the more difficult evasion task.
 
-### Augmentation + NLI Results
+### Training and Inference
 
-| Model | Dataset | Macro F1 |
-| :--- | :--- | :---: |
-| ModernBERT-Large | Original | 0.6479 |
-| **ModernBERT-Large** | GPT-5.1 Augmented | 0.6789 |
-| ModernBERT-Large | Backtranslation Augmented | 0.4926 |
-| ModernBERT-Large + Focal Loss (γ=2.0) | GPT-5.1 Augmented | 0.6629 |
-| ModernBERT-Large + Focal Loss (γ=3.0) | GPT-5.1 Augmented | 0.5960 |
-| ModernBERT-Large + Focal Loss (γ=1.0) | GPT-5.1 Augmented | 0.6245 |
-| ModernBERT-Large + Weighted CE | GPT-5.1 Augmented | 0.6755 |
-| DeBERTa-v3-Large | Original | 0.5807 |
-| DeBERTa-v3-Large | Backtranslation Augmented | 0.5823 |
-| DeBERTa-v3-Large | GPT-5.1 Augmented | 0.5669 |
-| Political_DEBATE (NLI) | Original | 0.5969 |
-| Political_DEBATE (NLI) | GPT-5.1 Augmented | 0.5915 |
-| ModernBERT-Large-NLI | Original | 0.6442 |
+- 7-fold stratified cross-validation, stratified by Subtask 1 labels to preserve class proportions.
+- Checkpoint selection maximizes the combined score $\text{F1}_{\text{comb}} = \frac{1}{2}(\text{F1}_{\text{clarity}} + \text{F1}_{\text{evasion}})$.
+- At inference time, all 7 fold models are ensembled by averaging predicted class probabilities and taking argmax.
 
----
+## Experimental Setup
 
+### Hyperparameters
+
+| Hyperparameter | Value |
+| :--- | :--- |
+| Optimizer | AdamW (weight decay 0.01) |
+| Learning rate | 1e-5 (10% warmup) |
+| Batch size | 8 |
+| Max epochs | 15 (early stopping patience = 3) |
+| Classifier dropout | 0.1 |
+| Gradient clipping | max norm 1.0 |
+| Precision | BF16 mixed precision |
+| Gradient checkpointing | enabled |
+| Random seed | 42 (base; per-fold offset) |
+
+### Hardware
+
+All experiments were conducted on a single NVIDIA RTX 3090 (24 GB VRAM). Training the full 7-fold ensemble takes approximately 5 hours.
+
+### Dependencies
+
+- `torch` (>=2.2.2)
+- `transformers` (>=4.40.0)
+- `datasets` (>=2.19.0)
+- `accelerate` (>=0.30.0)
+- `scikit-learn` (>=1.4.2)
+- `numpy` (>=1.26.4)
+- `pandas` (>=2.2.2)
+- `protobuf` (==3.20.3)
+- `sentencepiece` (>=0.2.0)
+
+Install all dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Results
+
+### Official Test Set
+
+| Subtask | Rank | Macro-F1 |
+| :--- | :---: | :---: |
+| Subtask 1 (Clarity) | 11 / 41 | 0.80 |
+| Subtask 2 (Evasion) | 11 / 33 | 0.51 |
+
+### Ablation Studies (7-fold CV, mean ± std)
+
+**Pooling Strategy**
+
+| Pooling Method | Clarity F1 | Evasion F1 |
+| :--- | :---: | :---: |
+| First Chunk Only | 0.67 ± 0.01 | 0.42 ± 0.01 |
+| Mean Pooling | 0.68 ± 0.02 | 0.43 ± 0.02 |
+| **Max-Pooling (Ours)** | **0.70 ± 0.02** | **0.45 ± 0.02** |
+
+**Multi-Task Learning**
+
+| Training Objective | Clarity F1 | Evasion F1 |
+| :--- | :---: | :---: |
+| Single-task (Clarity only) | **0.70 ± 0.02** | -- |
+| Single-task (Evasion only) | -- | 0.42 ± 0.01 |
+| **Multi-task (Ours)** | 0.70 ± 0.02 | **0.45 ± 0.02** |
+
+**Ensemble Size**
+
+| Ensemble Size | Clarity F1 | Evasion F1 |
+| :--- | :---: | :---: |
+| 3-fold | 0.66 ± 0.01 | 0.42 ± 0.02 |
+| 5-fold | 0.68 ± 0.02 | 0.43 ± 0.03 |
+| **7-fold (Ours)** | **0.70 ± 0.02** | **0.45 ± 0.02** |
+
+### Error Analysis
+
+**Subtask 1 (Clarity)**
+
+The model correctly identifies ~78% of *Ambivalent* samples but misclassifies ~35% of *Clear Replies* and ~30% of *Clear Non-Replies* as *Ambivalent*, which acts as a majority-class sink for borderline cases.
+
+<img src="images/clarity_normalized.png" alt="Normalized confusion matrix for Subtask 1 (Clarity)" width="450"/>
+
+**Subtask 2 (Evasion)**
+
+Recall is lowest for *Partial/half-answer* (~6.3%), which is most frequently confused with *Explicit* or *Implicit*. Strategies with strong lexical cues achieve substantially higher recall: *Clarification* (~74%), *Declining to answer* (~59%), and *Claims ignorance* (~52%).
+
+<img src="images/evasion_normalized.png" alt="Normalized confusion matrix for Subtask 2 (Evasion)" width="700"/>
+
+## Future Work
+
+Several directions remain open for improving performance:
+
+- Targeted data augmentation for minority evasion classes to address the severe class imbalance in Subtask 2.
+- Cost-sensitive training objectives (e.g., class-weighted loss, focal loss) to reduce the tendency of *Ambivalent* to act as a majority-class sink in Subtask 1.
+- Explicit question--answer interaction modeling via cross-attention between the question and the response, motivated by the fact that certain fine-grained evasion strategies are definitionally relational and may not be captured by simple concatenation.
+- Larger ensemble sizes and alternative aggregation strategies beyond average-probability ensembling.
 
 ## Repository Structure
+
 ```
 Clarity/
+├── main.tex                       # Paper source
+├── requirements.txt               # Python dependencies
 ├── notebooks/
-│   ├── final/                
-│   │   ├── train_roberta_maxpool_multihead_kfold.ipynb
-│   │   └── train_roberta_multihead.ipynb
-│   └── experiments/          
-│       ├── modernbert_*.ipynb
-│       ├── deberta_*.ipynb
-│       ├── llama3.1_*.ipynb
-│       └── data_augmentation_*.ipynb
-├── src/                       
+│   ├── final/                     # Final submitted system
+│   │   └── train_roberta_maxpool_multihead_kfold.ipynb
+│   ├── baselines/                 # Baseline experiments
+│   └── experiments/               # Exploratory experiments
+├── src/
+│   ├── evaluate_predictions.py
 │   ├── feature_extractor.py
 │   └── process_dataset.py
-└── data/                       
+├── data/
+│   ├── predictions/               # Model predictions
+│   └── augmentated_datasets/      # Augmented training data
+├── official_test_dataset/         # Official evaluation data
+├── images/                        
 ```
+
