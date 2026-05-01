@@ -1,6 +1,7 @@
 # Multi-Head RoBERTa with Chunking for Long-Context Evasion Detection
 
 This repository contains our system for **SemEval-2026 Task 6 (CLARITY: Unmasking Political Question Evasions)**.
+Our paper based on this implementation was accepted to the SemEval-2026 workshop (co-located with ACL 2026) and is available at https://arxiv.org/abs/2604.26375.
 
 - [Shared Task Page](https://konstantinosftw.github.io/CLARITY-SemEval-2026/)
 - [HuggingFace Dataset](https://huggingface.co/datasets/ailsntua/QEvasion)
@@ -133,7 +134,7 @@ The model correctly identifies ~78% of *Ambivalent* samples but misclassifies ~3
 
 **Subtask 2 (Evasion)**
 
-Recall is lowest for *Partial/half-answer* (~6.3%), which is most frequently confused with *Explicit* or *Implicit*. Strategies with strong lexical cues achieve substantially higher recall: *Clarification* (~74%), *Declining to answer* (~59%), and *Claims ignorance* (~52%).
+Recall is lowest for *Partial/half-answer* (0.0%), with predictions scattered across multiple classes. Strategies with strong lexical cues achieve substantially higher recall: *Clarification* (~74%), *Declining to answer* (~59%), and *Claims ignorance* (~52%).
 
 <img src="images/evasion_normalized.png" alt="Normalized confusion matrix for Subtask 2 (Evasion)" width="700"/>
 
@@ -155,6 +156,7 @@ Clarity/
 ├── notebooks/
 │   ├── final/                     # Final submitted system
 │   │   └── train_roberta_maxpool_multihead_kfold.ipynb
+│   ├── ablation/                  # Paper ablations
 │   ├── baselines/                 # Baseline experiments
 │   └── experiments/               # Exploratory experiments
 ├── src/
